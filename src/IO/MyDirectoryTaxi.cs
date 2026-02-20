@@ -13,8 +13,7 @@ namespace MyMeteor.IO;
 /// <summary>
 /// A utility for the smooth management of working directories.
 /// </summary>
-/// <remarks>Global using within the MyMeteor.IO namespace.</remarks>
-/// <remarks>Thanks to Taichi Suzuki for the inspiration.</remarks>
+/// <remarks>Global using within the MyMeteor.IO namespace. (Thanks to Taichi Suzuki for the inspiration.)</remarks>
 public class MyDirectoryTaxi
 {
     private static readonly ConcurrentDictionary<int, Stack<string>> TaskStacks = [];
@@ -32,7 +31,7 @@ public class MyDirectoryTaxi
     /// <summary>
     /// Push the current working directory onto the stack.
     /// </summary>
-    public static void PushDirectory() => Staxi.Push(CurrentDirectory);
+    public static void PushDirectory() => Staxi.Push(Environment.CurrentDirectory);
 
     /// <summary>
     /// Push a path onto the stack.
@@ -50,7 +49,7 @@ public class MyDirectoryTaxi
 
     internal static void InternalPushDirectoryAndGo(string path)
     {
-        Staxi.Push(CurrentDirectory);
+        Staxi.Push(Environment.CurrentDirectory);
         Directory.SetCurrentDirectory(path);
     }
 
@@ -77,7 +76,7 @@ public class MyDirectoryTaxi
 
         else
         {
-            Staxi.Push(CurrentDirectory);
+            Staxi.Push(Environment.CurrentDirectory);
             if (!SuppressWarnings)
                 Console.WriteLine($"WARNING: {path} provided to CreateDirectoryPushAndGo. The current directory was pushed onto the stack.");
         }
@@ -111,7 +110,7 @@ public class MyDirectoryTaxi
 
         else
         {
-            Staxi.Push(CurrentDirectory);
+            Staxi.Push(Environment.CurrentDirectory);
             if (!SuppressWarnings)
                 Console.WriteLine($"WARNING: {path} provided to PushDirectoryAndGo. The current directory was pushed onto the stack.");
         }
@@ -132,7 +131,7 @@ public class MyDirectoryTaxi
     /// </summary>
     public static void PushDirectoryAndGoUp()
     {
-        string backOne = Path.GetDirectoryName(CurrentDirectory);
+        string backOne = Path.GetDirectoryName(Environment.CurrentDirectory);
 
         if (string.IsNullOrEmpty(backOne))
             if (!SuppressWarnings)
