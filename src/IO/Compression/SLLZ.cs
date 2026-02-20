@@ -1,14 +1,19 @@
 ﻿using System;
 using System.IO.Compression;
-using System.Reflection.PortableExecutable;
 
 
 namespace MyMeteor.IO.Compression;
 
-// StandardLibraryLZ?
+/// <summary>
+/// A class enabling SLLZ encoding and decoding.
+/// </summary>
+/// <remarks>(SL for Standard Library, LZ for Lempel-Ziv.)</remarks>
 public class SLLZ
 {
-    private static readonly byte[] Magic = [0x53, 0x4C, 0x4C, 0x5A];  // Regardless of endianness
+    /// <summary>
+    /// The header signature for SLLZ-encoded data.
+    /// </summary>
+    public static readonly byte[] Magic = [0x53, 0x4C, 0x4C, 0x5A];  // Regardless of endianness
 
     private const int MAX_WINDOW_SIZE = 4096;
     private const int MAX_MATCH_LENGTH = 18;
@@ -16,6 +21,10 @@ public class SLLZ
 
 
     #region HeaderedDecode
+    /// <summary>
+    /// Attempt to decode the input data.
+    /// </summary>
+    /// <returns>The decoded data.</returns>
     public static byte[] Decode(byte[] inputData)
     {
         using MemoryStream inputStream = new(inputData);
@@ -23,12 +32,20 @@ public class SLLZ
         return Decode(reader);
     }
 
+    /// <summary>
+    /// Attempt to decode the input data.
+    /// </summary>
+    /// <returns>The decoded data.</returns>
     public static byte[] Decode(Stream inputStream)
     {
         using MyBinaryReader reader = new(inputStream, true);
         return Decode(reader);
     }
 
+    /// <summary>
+    /// Attempt to decode the input data.
+    /// </summary>
+    /// <returns>The decoded data.</returns>
     public static byte[] Decode(MyBinaryReader reader)
     {
         if (!reader.ReadBytes(4).SequenceEqual(Magic))
@@ -61,9 +78,17 @@ public class SLLZ
     #endregion
 
     #region HeaderedEncode
+    /// <summary>
+    /// Attempt to encode data with the requested parametres.
+    /// </summary>
+    /// <returns>The encoded data.</returns>
     public static byte[] Encode(BinaryReader reader, SLLZParameters param, uint dataSize = 0)
         => Encode(reader.BaseStream, param, dataSize);
 
+    /// <summary>
+    /// Attempt to encode data with the requested parametres.
+    /// </summary>
+    /// <returns>The encoded data.</returns>
     public static byte[] Encode(Stream inputStream, SLLZParameters param, uint dataSize = 0)
     {
         long remainder = inputStream.Length - inputStream.Position;
@@ -76,6 +101,10 @@ public class SLLZ
         return Encode(inputData, param);
     }
 
+    /// <summary>
+    /// Attempt to encode data with the requested parametres.
+    /// </summary>
+    /// <returns>The encoded data.</returns>
     public static byte[] Encode(byte[] inputData, SLLZParameters param)
     {
         if (param.Version == SLLZVersion.V2 && inputData.Length < 27)
@@ -126,6 +155,11 @@ public class SLLZ
     }
 
 
+    /// <summary>
+    /// Attempt to encode data using SLLZ version 1.
+    /// </summary>
+    /// <param name="inputData">The input data to be encoded.</param>
+    /// <remarks>Throws an exception if the encoded data is larger than anticipated.</remarks>
     public static ReadOnlySpan<byte> EncodeVersion1(ReadOnlySpan<byte> inputData)
     {
         int bufferSize = inputData.Length + 2048;
@@ -211,6 +245,11 @@ public class SLLZ
     #endregion
 
     #region DecodeVersion1
+    /// <summary>
+    /// Decode data using SLLZ version 1.
+    /// </summary>
+    /// <param name="inputData">The encoded input data.</param>
+    /// <param name="outputData">A suitably-sized span for output.</param>
     public static void DecodeVersion1(ReadOnlySpan<byte> inputData, Span<byte> outputData)
     {
         int inputPosition = 0;
@@ -269,6 +308,10 @@ public class SLLZ
     #endregion
 
     #region EncodeVersion2
+    /// <summary>
+    /// Encode data using SLLZ version 2.
+    /// </summary>
+    /// <param name="inputData">The input data to be encoded.</param>
     private static ReadOnlySpan<byte> EncodeVersion2(byte[] inputData)
     {
         MemoryStream outputDataStream = new();
@@ -304,6 +347,13 @@ public class SLLZ
     #endregion
 
     #region DecodeVersion2
+    /// <summary>
+    /// Attempt to decode data using SLLZ version 2.
+    /// </summary>
+    /// <param name="inputData">The encoded input data.</param>
+    /// <param name="outputData">A suitably-sized span for output.</param>
+    /// <remarks>Throws an exception if a chunk's size is ever different than expected.</remarks>
+    /// <exception cref="Exception"></exception>
     public static void DecodeVersion2(byte[] inputData, Span<byte> outputData)
     {
         using MyBinaryReader reader = new(new MemoryStream(inputData), false, Endianness.Big); // For some reason, chunk info is BE
@@ -343,6 +393,9 @@ public class SLLZ
 
     #endregion
 
+    /// <summary>
+    /// Get the current encoding parametres of an array of bytes, if it is SLLZ-headered.
+    /// </summary>
     public static SLLZParameters GetEncoding(byte[] data)
     {
         return data.AsSpan()[..4].SequenceEqual(Magic)
@@ -356,8 +409,21 @@ public enum SLLZVersion
     UNCOMPRESSED = 0,
     VERSION1 = 1,
     VERSION2 = 2,
+
+    /// <summary>
+    /// Synonym for version 1.
+    /// </summary>
     V1 = 1,
+
+    /// <summary>
+    /// Synonym for version 2.
+    /// </summary>
     V2 = 2,
 }
 
+/// <summary>
+/// Encoding parametres.
+/// </summary>
+/// <param name="Endianness">The endianness.</param>
+/// <param name="Version">The SLLZ version.</param>
 public record SLLZParameters(Endianness Endianness = Endianness.Little, SLLZVersion Version = SLLZVersion.V1);

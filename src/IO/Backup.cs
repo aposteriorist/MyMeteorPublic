@@ -1,10 +1,12 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Security.Cryptography.X509Certificates;
 using System.Text;
 
 namespace MyMeteor.IO;
 
+/// <summary>
+/// A simple automatic file backup utility.
+/// </summary>
 public class Backup
 {
     internal const string DefaultExtension = ".old";
@@ -15,9 +17,11 @@ public class Backup
     /// <remarks>A maximum of 1,000 automatic backups can exist in one location, numbered 000 to 999.</remarks>
     static public bool NewTop(string filepath, string extension = "")
     {
-        if (!FileExistsWithMessage(filepath)) return false;
+        if (!FileExistsWithMessage(filepath))
+            return false;
 
-        if (string.IsNullOrEmpty(extension)) extension = DefaultExtension;
+        if (string.IsNullOrEmpty(extension))
+            extension = DefaultExtension;
 
         string dir = Path.GetDirectoryName(filepath);
         string filename = Path.GetFileName(filepath);
@@ -58,9 +62,11 @@ public class Backup
     /// <remarks>A maximum of 1,000 automatic backups can exist in one location, numbered 000 to 999.</remarks>
     static public bool NewBottom(string filepath, string extension = "")
     {
-        if (!FileExistsWithMessage(filepath)) return false;
+        if (!FileExistsWithMessage(filepath))
+            return false;
 
-        if (string.IsNullOrEmpty(extension)) extension = DefaultExtension;
+        if (string.IsNullOrEmpty(extension))
+            extension = DefaultExtension;
 
         string dir = Path.GetDirectoryName(filepath);
         string filename = Path.GetFileName(filepath);
@@ -94,7 +100,8 @@ public class Backup
     {
         bool result = File.Exists(filepath);
 
-        if (!result) Console.WriteLine($"Backup error: the file \"{filepath}\" does not exist. No work was performed.");
+        if (!result)
+            Console.WriteLine($"Backup error: the file \"{filepath}\" does not exist. No work was performed.");
 
         return result;
     }
