@@ -4,10 +4,19 @@ using System.Collections.ObjectModel;
 
 namespace MyMeteor.Archive;
 
+/// <summary>
+/// A class representing the header for a directory within an archive.
+/// </summary>
 public class PXDArchiveDirectoryHeader
 {
+    /// <summary>
+    /// The default name for a root directory, based on the root directory mode in the settings.
+    /// </summary>
     internal static string DefaultRootName => PXDArchiveOptions.RootDirectoryMode == PXDRootDirMode.WithDotName ? "." : "";
 
+    /// <summary>
+    /// The directory's name.
+    /// </summary>
     public string Name { get; internal set; } = "";
     internal int DirCount = 0;
     internal int FirstDirIndex = 0;
@@ -15,6 +24,9 @@ public class PXDArchiveDirectoryHeader
     internal int FirstFileIndex = 0;
     public FileAttributes Attributes { get; internal set; } = FileAttributes.Directory;
 
+    /// <summary>
+    /// Create a header from a reader over the text of an archive manifest, positioned appropriately.
+    /// </summary>
     internal static PXDArchiveDirectoryHeader HeaderFromManifest(StreamReader reader)
     {
         PXDArchiveDirectoryHeader header = new()
@@ -38,13 +50,24 @@ public class PXDArchiveDirectoryHeader
     }
 }
 
+/// <summary>
+/// A virtual directory used as part of the file structure for an archive.
+/// </summary>
 public class PXDArchiveDirectory : PXDArchiveDirectoryHeader
 {
+    /// <summary>
+    /// A read-only collection of the subdirectories in this directory.
+    /// </summary>
+    public ReadOnlyCollection<PXDArchiveDirectory> Subdirectories => _subdirectories.AsReadOnly();
+
+    /// <summary>
+    /// A read-only collection of the files in this directory.
+    /// </summary>
+    public ReadOnlyCollection<PXDArchiveFile> Files => _files.AsReadOnly();
+
     internal PXDArchiveDirectory[] _subdirectories;
-    public ReadOnlyCollection<PXDArchiveDirectory> Directories => _subdirectories.AsReadOnly();
 
     internal PXDArchiveFile[] _files;
-    public ReadOnlyCollection<PXDArchiveFile> Files => _files.AsReadOnly();
 
     internal bool FileTreeInitialized = false;
 
@@ -52,25 +75,16 @@ public class PXDArchiveDirectory : PXDArchiveDirectoryHeader
     internal int FileTreeFileCount => FileCount + _subdirectories.Sum(subdir => subdir.FileTreeFileCount);
     internal List<PXDArchiveDirectory[]> FileTreeDirectorySets;
     internal List<PXDArchiveFile> FileTreeFiles = [];
-/*    {
-        get
-        {
-            List<PXDArchiveDirectory[]> list = [Subdirectories];
 
-            foreach (var subdir in Subdirectories)
-            {
-                list.AddRange(subdir.FileTreeDirectories);
-            }    
-            return list;
-        }
-    }*/
-
+    /// <summary>
+    /// Create a directory.
+    /// </summary>
     public PXDArchiveDirectory(string name)
     {
         Name = name ?? DefaultRootName;
     }
 
-    public static PXDArchiveDirectory FromArchiveEntry(MyBinaryReader reader, string name)
+    internal static PXDArchiveDirectory FromArchiveEntry(MyBinaryReader reader, string name)
     {
         PXDArchiveDirectory dir = new(name)
         {
@@ -154,7 +168,7 @@ public class PXDArchiveDirectory : PXDArchiveDirectoryHeader
         return dir;
     }
 
-    public void ToArchiveEntry(MyBinaryWriter writer)
+    internal void ToArchiveEntry(MyBinaryWriter writer)
     {
         writer.Write(DirCount);
         writer.Write(FirstDirIndex);
@@ -319,7 +333,24 @@ public class PXDArchiveDirectory : PXDArchiveDirectoryHeader
         return dir;
     }
 
-    public int ToDirectory()
+    /// <summary>
+    /// Extract the directory to the specified location, including all files and subdirectories.
+    /// </summary>
+    /// <param name="outputPath">The output path for the directory.</param>
+    public void ToDirectory(string outputPath)
+    {
+        CreateDirectoryPushAndGo(outputPath);
+
+        ToDirectory();
+
+        PopDirectoryAndGo();
+    }
+
+    /// <summary>
+    /// Extract the directory, including all files and subdirectories.
+    /// </summary>
+    /// <returns>The number of subdirectories extracted, recursively.</returns>
+    internal int ToDirectory()
     {
         int fileTreeDirCount = 0;
 
@@ -357,7 +388,10 @@ public class PXDArchiveDirectory : PXDArchiveDirectoryHeader
     internal void RecordFilesAt(Span<PXDArchiveFile> newFiles, int index) => newFiles.CopyTo(_files.AsSpan(index));
     internal void RecordSubdirectoryAt(PXDArchiveDirectory dir, int index) => _subdirectories[index] = dir;
 
-
+    /// <summary>
+    /// Check if the directory is similar to another directory.
+    /// </summary>
+    /// <remarks>Compares the directory headers and file names.</remarks>
     public bool SimilarTo(PXDArchiveDirectory? other)
     {
         bool eq =

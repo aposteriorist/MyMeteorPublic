@@ -5,10 +5,20 @@ using System.IO;
 
 namespace MyMeteor.Archive;
 
+/// <summary>
+/// A class representing the header for an archive.
+/// Enables basic analysis of archive information without a full analysis being performed.
+/// </summary>
 public class PXDArchiveHeader
 {
+    /// <summary>
+    /// The default name for a root directory, based on the root directory mode in the settings.
+    /// </summary>
     public static string DefaultRootDirectoryName => PXDArchiveDirectoryHeader.DefaultRootName;
 
+    /// <summary>
+    /// The file signature for the header.
+    /// </summary>
     public static readonly char[] Magic = ['P', 'A', 'R', 'C'];  // Regardless of endianness
 
     public byte Platform { get; internal set; }
@@ -17,9 +27,14 @@ public class PXDArchiveHeader
     public bool Relocated { get; internal set; }
     internal ushort FileSizeMode = 1;
     internal ushort UnknownA = 1;
+
+    // TO-DO: Create public properties in PXDArchive to access the collection counts, and rename these.
     internal int DirCount = 0;
     internal int FileCount = 0;
 
+    /// <summary>
+    /// Create a header from a reader over the text of an archive manifest.
+    /// </summary>
     internal static PXDArchiveHeader FromManifest(StreamReader reader, out string name)
     {
         name = reader.ReadLine().Split().Last();
@@ -38,27 +53,65 @@ public class PXDArchiveHeader
     }
 }
 
+/// <summary>
+/// A class storing a virtual file structure that can be binarized into a .par file.
+/// </summary>
 public class PXDArchive : PXDArchiveHeader
 {
+    /// <summary>
+    /// The archive's name.
+    /// </summary>
     public string Name { get; private set; }
 
-    private PXDArchiveDirectory[] _directories;
+    /// <summary>
+    /// A read-only collection of the directories in this archive.
+    /// </summary>
     public ReadOnlyCollection<PXDArchiveDirectory> Directories => _directories.AsReadOnly();
 
-    private PXDArchiveFile[] _files;
+    /// <summary>
+    /// A read-only collection of the files in this archive.
+    /// </summary>
     public ReadOnlyCollection<PXDArchiveFile> Files => _files.AsReadOnly();
 
+    /// <summary>
+    /// The root directory for this archive.
+    /// </summary>
     public PXDArchiveDirectory RootDirectory { get; private set; }
 
+    /// <summary>
+    /// Whether the archive's data has been loaded into memory.
+    /// </summary>
     public bool DataLoaded { get; private set; } = false;
+
+    /// <summary>
+    /// Whether the archive has been initialized.
+    /// </summary>
     public bool ArchiveInitialized { get; private set; } = false;
+
+    /// <summary>
+    /// Whether the file tree has been initialized.
+    /// </summary>
     public bool FileTreeInitialized { get; private set; } = false;
+
+    private PXDArchiveDirectory[] _directories;
+
+    private PXDArchiveFile[] _files;
 
     private byte[] Data;
 
     #region Construction
+    /// <summary>
+    /// Create an empty archive.
+    /// </summary>
+    /// <param name="name">The name of the archive.</param>
     public PXDArchive(string name) => Name = name;
 
+    /// <summary>
+    /// Create an empty archive.
+    /// </summary>
+    /// <param name="name">The name of the archive.</param>
+    /// <param name="platform">The platform.</param>
+    /// <param name="endianness">The endianness.</param>
     public PXDArchive(string name, byte platform, Endianness endianness = Endianness.Big)
     {
         Name = name;
@@ -66,6 +119,15 @@ public class PXDArchive : PXDArchiveHeader
         Endianness = endianness;
     }
 
+    /// <summary>
+    /// Create an empty archive, initializing the directory and file collections.
+    /// </summary>
+    /// <param name="name">The name of the archive.</param>
+    /// <param name="expectedDirCount">The expected number of directories. For initial capacity.</param>
+    /// <param name="expectedFileCount">The expected number of files. For initial capacity.</param>
+    /// <param name="platform">The platform.</param>
+    /// <param name="endianness">The endianness.</param>
+    /// <returns></returns>
     public static PXDArchive CreateEmptyArchive(string name, int expectedDirCount = 0, int expectedFileCount = 0, byte platform = 2, Endianness endianness = Endianness.Big)
     {
         var par = new PXDArchive(name, platform, endianness)
@@ -81,6 +143,10 @@ public class PXDArchive : PXDArchiveHeader
     #endregion
 
     #region FromSubArchive
+    /// <summary>
+    /// Create an archive from an archived file known to be a sub-archive.
+    /// </summary>
+    /// <returns>An archive, or null if the file is not a PXD archive.</returns>
     public static PXDArchive? FromSubArchive(PXDArchiveFile file)
     {
         PXDArchive? subpar = null;
@@ -98,9 +164,25 @@ public class PXDArchive : PXDArchiveHeader
     #endregion
 
     #region ImportFile
-    public static PXDArchive? FromFile(string parPath, bool loadData = false, bool decodeData = false)
-        => FromFile(new FileInfo(parPath), loadData, decodeData);
+    /// <summary>
+    /// Create an archive from a file path on disk.
+    /// File data can be loaded into memory and decoded at this time.
+    /// </summary>
+    /// <param name="parPath">The file path to an archive.</param>
+    /// <param name="loadAllData">Whether to load the archived files' data into memory.</param>
+    /// <param name="decodeData">Whether to decode the archived files' data.</param>
+    /// <remarks>(Requesting that data be decoded is a no-op if data is not loaded.)</remarks>
+    public static PXDArchive? FromFile(string parPath, bool loadAllData = false, bool decodeData = false)
+        => FromFile(new FileInfo(parPath), loadAllData, decodeData);
 
+    /// <summary>
+    /// Create an archive from a FileInfo instance pointing to a file path on disk.
+    /// File data can be loaded into memory and decoded at this time.
+    /// </summary>
+    /// <param name="parInfo">The file in question.</param>
+    /// <param name="loadAllData">Whether to load the archived files' data into memory.</param>
+    /// <param name="decodeData">Whether to decode the archived files' data.</param>
+    /// <remarks>(Requesting that data be decoded is a no-op if data is not loaded.)</remarks>
     public static PXDArchive? FromFile(FileInfo parInfo, bool loadAllData = false, bool decodeData = false)
     {
         PXDArchive? par = null;
@@ -136,6 +218,16 @@ public class PXDArchive : PXDArchiveHeader
     #endregion
 
     #region ImportStream
+    /// <summary>
+    /// Create an archive from a stream.
+    /// File data can be loaded into memory and decoded at this time.
+    /// </summary>
+    /// <param name="stream">A stream over the archive data.</param>
+    /// <param name="archiveName">A name for the archive.</param>
+    /// <param name="loadAllData">Whether to store the archived files' data in memory.</param>
+    /// <param name="decodeData">Whether to decode the archived files' data.</param>
+    /// <param name="disposeStream">Whether to dispose of the stream after work is complete.</param>
+    /// <remarks>(Requesting that data be decoded is a no-op if data is not loaded.)</remarks>
     public static PXDArchive? FromStream(Stream stream, string archiveName = "Untitled.par", bool loadAllData = false, bool decodeData = false, bool disposeStream = false)
     {
         MyBinaryReader reader = new(stream, !disposeStream);
@@ -143,7 +235,17 @@ public class PXDArchive : PXDArchiveHeader
         return FromStream(reader, archiveName, loadAllData, decodeData, true);
     }
 
-    public static PXDArchive? FromStream(MyBinaryReader reader, string archiveName = "Untitled.par", bool loadAllData = false, bool decodeData = false, bool disposeReader = false)
+    /// <summary>
+    /// Create an archive from a stream via a binary reader.
+    /// File data can be loaded into memory and decoded at this time.
+    /// </summary>
+    /// <param name="reader">A reader over an archive data stream.</param>
+    /// <param name="archiveName">A name for the archive.</param>
+    /// <param name="loadAllData">Whether to store the archived files' data in memory.</param>
+    /// <param name="decodeData">Whether to decode the archived files' data.</param>
+    /// <param name="disposeOfReader">Whether to dispose of the reader after work is complete.</param>
+    /// <remarks>(Requesting that data be decoded is a no-op if data is not loaded.)</remarks>
+    public static PXDArchive? FromStream(MyBinaryReader reader, string archiveName = "Untitled.par", bool loadAllData = false, bool decodeData = false, bool disposeOfReader = false)
     {
         PXDArchive par = new(archiveName);
 
@@ -157,11 +259,20 @@ public class PXDArchive : PXDArchiveHeader
             reader.PopBack();
         }
 
-        par.ParseStream(reader, loadAllData, decodeData, disposeReader);
+        par.ParseStream(reader, loadAllData, decodeData, disposeOfReader);
 
         return par;
     }
 
+    /// <summary>
+    /// Parse a stream over archive data.
+    /// File data can be loaded into memory and decoded at this time.
+    /// </summary>
+    /// <param name="stream">A stream over the archive data.</param>
+    /// <param name="loadAllData">Whether to store the archived files' data in memory.</param>
+    /// <param name="decodeData">Whether to decode the archived files' data.</param>
+    /// <param name="disposeStream">Whether to dispose of the stream after work is complete.</param>
+    /// <remarks>(Requesting that data be decoded is a no-op if data is not loaded.)</remarks>
     public void ParseStream(Stream stream, bool loadAllData = false, bool decodeData = false, bool disposeStream = false)
     {
         MyBinaryReader reader = new(stream, !disposeStream);
@@ -170,6 +281,15 @@ public class PXDArchive : PXDArchiveHeader
     }
 
     // TO-DO: This function should only run if the archive is already empty.
+    /// <summary>
+    /// Parse a stream over archive data via a binary reader.
+    /// File data can be loaded into memory and decoded at this time.
+    /// </summary>
+    /// <param name="reader">A reader over an archive data stream.</param>
+    /// <param name="loadAllData">Whether to store the archived files' data in memory.</param>
+    /// <param name="decodeData">Whether to decode the archived files' data.</param>
+    /// <param name="disposeOfReader">Whether to dispose of the stream after work is complete.</param>
+    /// <remarks>(Requesting that data be decoded is a no-op if data is not loaded.)</remarks>
     public void ParseStream(MyBinaryReader reader, bool loadAllData = false, bool decodeData = false, bool disposeOfReader = false)
     {
         reader.PushForward(0);
@@ -250,6 +370,14 @@ public class PXDArchive : PXDArchiveHeader
     #endregion
 
     #region ImportDirectory
+    /// <summary>
+    /// Create an archive from a directory path on disk.
+    /// File data can be loaded into memory at this time.
+    /// </summary>
+    /// <param name="parName">A name for the archive.</param>
+    /// <param name="dirPath">The directory path.</param>
+    /// <param name="loadAllData">Whether to store the archived files' data in memory.</param>
+    /// <param name="encodingParams">The parametres for file encoding (default is null, signifying no encoding).</param>
     public static PXDArchive? FromDirectory(string parName, string dirPath, bool loadAllData = true, SLLZParameters? encodingParams = null)
     {
         SuppressDirectoryTaxiWarnings();
@@ -267,7 +395,7 @@ public class PXDArchive : PXDArchiveHeader
             // I wonder if Kenzan does anything with this information.
             par = new(parName, 2);
 
-            par.FileSizeMode = (ushort)(PXDArchiveOptions.WriteTotalFileSize != PXDFileSizeWriteMode.NoWrite ? 1 : 2);
+            par.FileSizeMode = (ushort)(PXDArchiveOptions.FileSizeWriteMode != PXDFileSizeWriteMode.NoWrite ? 1 : 2);
 
             // Recursively parse all directories in this file tree.
             par.RootDirectory = PXDArchiveDirectory.FromDirectory(DefaultRootDirectoryName, ref par.DirCount, ref par.FileCount, loadAllData);
@@ -302,8 +430,16 @@ public class PXDArchive : PXDArchiveHeader
         return par;
     }
 
+    /// <summary>
+    /// Create an archive from an archive manifest.
+    /// </summary>
+    /// <param name="manifestPath">The path to a manifest file on disk.</param>
     public static PXDArchive? FromManifest(string manifestPath) => FromManifest(new FileInfo(manifestPath));
 
+    /// <summary>
+    /// Create an archive from an archive manifest.
+    /// </summary>
+    /// <param name="manifest">A FileInfo instance for a manifest file on disk.</param>
     public static PXDArchive? FromManifest(FileInfo manifest)
     {
         if (manifest.Exists)
@@ -318,6 +454,10 @@ public class PXDArchive : PXDArchiveHeader
         return null;
     }
 
+    /// <summary>
+    /// Create an archive from a reader over an archive manifest.
+    /// </summary>
+    /// <param name="reader">A reader over the text of an archive manifest.</param>
     public static PXDArchive? FromManifest(StreamReader reader)
     {
         PXDArchive? par = null;
@@ -376,6 +516,12 @@ public class PXDArchive : PXDArchiveHeader
     #endregion
 
     #region ExportFile
+    /// <summary>
+    /// Export the archive as a .par file.
+    /// </summary>
+    /// <param name="path">The output directory.</param>
+    /// <param name="fileAlignment">The alignment for individual files in the archive (defaults to 0x800).</param>
+    /// <param name="encodingParams">The parametres for file encoding (default is null, signifying no encoding).</param>
     public void ToArchiveFile(string path, uint fileAlignment = 0x800, SLLZParameters? encodingParams = null)
     {
         var buffer = ToArchiveFile(fileAlignment, encodingParams);
@@ -383,6 +529,11 @@ public class PXDArchive : PXDArchiveHeader
         File.WriteAllBytes(Path.Combine(path, $"{Name}.par"), buffer);
     }
 
+    /// <summary>
+    /// Binarize the archive.
+    /// </summary>
+    /// <param name="fileAlignment">The alignment for individual files in the archive (defaults to 0x800).</param>
+    /// <param name="encodingParams">The parametres for file encoding (default is null, signifying no encoding).</param>
     public ReadOnlySpan<byte> ToArchiveFile(uint fileAlignment = 0x800, SLLZParameters? encodingParams = null)
     {
         AssertReadyForWrite();  // Unrecovered error is fine for now
@@ -453,7 +604,7 @@ public class PXDArchive : PXDArchiveHeader
             long totalFileSize = writer.Length;
 
             // Weirdo option from an early version of PAR in Kenzan.
-            if (PXDArchiveOptions.WriteTotalFileSize == PXDFileSizeWriteMode.WriteAligned)
+            if (PXDArchiveOptions.FileSizeWriteMode == PXDFileSizeWriteMode.WriteAligned)
             {
                 long diff = totalFileSize % fileAlignment;
                 if (diff > 0)
@@ -472,6 +623,10 @@ public class PXDArchive : PXDArchiveHeader
     #endregion
 
     #region ExportDirectory
+    /// <summary>
+    /// Extract the contents of the archive.
+    /// </summary>
+    /// <param name="path">The extraction path.</param>
     public void ToDirectory(string path = "")
     {
         CreateDirectoryPushAndGo(path);
@@ -486,6 +641,10 @@ public class PXDArchive : PXDArchiveHeader
         PopDirectoryAndGo();
     }
 
+    /// <summary>
+    /// Produce an archive manifest.
+    /// </summary>
+    /// <param name="path">The output path.</param>
     public void ToManifest(string path = "")
     {
         CreateDirectoryPushAndGo(path);
@@ -515,6 +674,11 @@ public class PXDArchive : PXDArchiveHeader
         PopDirectoryAndGo();
     }
 
+    /// <summary>
+    /// Blindly extract all files to the current working directory.
+    /// Directory hierarchy is ignored. File naming conflicts are not handled (files with the same name will overwrite one another).
+    /// Usage of this function is NOT recommended.
+    /// </summary>
     public void DumpAllFiles()
     {
         foreach (var entry in _files)
@@ -527,6 +691,9 @@ public class PXDArchive : PXDArchiveHeader
     #endregion
 
     #region FileInitialization
+    /// <summary>
+    /// If archive initialization has been performed, initialize the file tree from the archive.
+    /// </summary>
     private void InitializeFileTreeFromArchive()
     {
         if (ArchiveInitialized)
@@ -590,7 +757,10 @@ public class PXDArchive : PXDArchiveHeader
             Console.WriteLine("WARNING: File tree initialization from archive requested, but archive was never initialized.");
     }
 
-    public void CopyFileTreeTo(PXDArchiveDirectory dir)
+    /// <summary>
+    /// Copy the appropriate slice of the archive's file tree into a directory's file tree.
+    /// </summary>
+    internal void CopyFileTreeTo(PXDArchiveDirectory dir)
     {
         _directories.AsSpan(dir.FirstDirIndex, dir.DirCount).CopyTo(dir._subdirectories);
         var dirFiles = _files.AsSpan(dir.FirstFileIndex, dir.FileCount);
@@ -603,6 +773,9 @@ public class PXDArchive : PXDArchiveHeader
         dir.FileTreeInitialized = true;
     }
 
+    /// <summary>
+    /// If the file tree has been initialized, initialize the archive from the file tree.
+    /// </summary>
     private void InitializeArchiveFromFileTree()
     {
         if (FileTreeInitialized)
@@ -651,6 +824,10 @@ public class PXDArchive : PXDArchiveHeader
     #endregion
 
     #region Flash
+    /// <summary>
+    /// Flash the archive with an appropriate file on disk.
+    /// </summary>
+    /// <param name="flashFile">A FileInfo instance pointing to either an archive or an archive manifest.</param>
     public void FlashFrom(FileInfo flashFile)
     {
         if (flashFile.Extension == ".par")
@@ -661,8 +838,16 @@ public class PXDArchive : PXDArchiveHeader
             Console.WriteLine($"ERROR: The file {flashFile.FullName} does not have a .par or .manifest extension. No flash was performed.");
     }
 
+    /// <summary>
+    /// Flash the archive with an archive manifest on disk.
+    /// </summary>
+    /// <param name="manifestPath">The file path.</param>
     public void FlashFromManifest(string manifestPath) => FlashFromManifest(new FileInfo(manifestPath));
 
+    /// <summary>
+    /// Flash the archive with an archive manifest on disk.
+    /// </summary>
+    /// <param name="manifest">A FileInfo instance pointing to a manifest on disk.</param>
     public void FlashFromManifest(FileInfo manifest)
     {
         if (manifest.Exists)
@@ -675,6 +860,11 @@ public class PXDArchive : PXDArchiveHeader
             Console.WriteLine($"ERROR: Manifest file not found ({manifest.FullName}). No flash was performed.");
     }
 
+    /// <summary>
+    /// Flash the archive with a reader over an archive manifest.
+    /// </summary>
+    /// <param name="reader">A reader over the text data of an archive manifest.</param>
+    /// <exception cref="Exception"></exception>
     public void FlashFromManifest(StreamReader reader)
     {
         if (reader.ReadLine() == "PXD ARCHIVE MANIFEST")
@@ -705,6 +895,9 @@ public class PXDArchive : PXDArchiveHeader
             Console.WriteLine("WARNING: Manifest file is not a well-formatted PXD archive manifest. No flash was performed.");
     }
 
+    /// <summary>
+    /// Flash the archive's header with some other archive header.
+    /// </summary>
     internal void FlashFromHeader(PXDArchiveHeader header)
     {
         Platform = header.Platform;
@@ -715,8 +908,16 @@ public class PXDArchive : PXDArchiveHeader
         UnknownA = header.UnknownA;
     }
 
+    /// <summary>
+    /// Flash the archive with an archive on disk.
+    /// </summary>
+    /// <param name="path">The file path of an archive.</param>
     public void FlashFromArchive(string path) => FlashFromArchive(new FileInfo(path));
 
+    /// <summary>
+    /// Flash the archive with an archive on disk.
+    /// </summary>
+    /// <param name="otherInfo">A FileInfo instance pointing to the file path of an archive.</param>
     public void FlashFromArchive(FileInfo otherInfo)
     {
         PXDArchive? other = FromFile(otherInfo);
@@ -727,6 +928,9 @@ public class PXDArchive : PXDArchiveHeader
             Console.WriteLine("ERROR in FlashFromArchive: the other archive failed to parse.");
     }
 
+    /// <summary>
+    /// Flash the archive with some other archive.
+    /// </summary>
     public void FlashFromArchive(PXDArchive other)
     {
         if (!SimilarTo(other))
@@ -740,6 +944,12 @@ public class PXDArchive : PXDArchiveHeader
     #endregion
 
     #region FileReplacement
+    /// <summary>
+    /// Replace the file at an index with a new file.
+    /// </summary>
+    /// <param name="newFile">The new file.</param>
+    /// <param name="fileIndex">The index to be replaced.</param>
+    /// <exception cref="IndexOutOfRangeException"></exception>
     public void ReplaceFile(PXDArchiveFile newFile, uint fileIndex)
     {
         if (fileIndex >= FileCount)
@@ -764,6 +974,11 @@ public class PXDArchive : PXDArchiveHeader
             Console.WriteLine($"File {newFile.Name} inserted at index {fileIndex}.");
     }
 
+    /// <summary>
+    /// Replace an existing file with a new file of the same name.
+    /// </summary>
+    /// <param name="newFile">The new file.</param>
+    /// <exception cref="Exception"></exception>
     public void ReplaceFileOfSameName(PXDArchiveFile newFile)
     {
         // Find the old file by name.
@@ -784,11 +999,18 @@ public class PXDArchive : PXDArchiveHeader
     #endregion
 
     #region FileEncoding
+    /// <summary>
+    /// Request decoding for the file at the given index.
+    /// If the file's data was not loaded, no work is performed.
+    /// If the file's data is not currently encoded, no work is performed.
+    /// </summary>
+    /// <param name="fileIndex">The file index for decoding.</param>
+    /// <remarks></remarks>
     public void DecodeFile(int fileIndex)
     {
         if (fileIndex >= FileCount)
         {
-            Console.WriteLine($"ERROR in DecodeFileData: File index {fileIndex} was given, but the archive only contains {FileCount} file(s).");
+            Console.WriteLine($"ERROR in DecodeFile: File index {fileIndex} was given, but the archive only contains {FileCount} file(s).");
         }
         else
         {
@@ -806,11 +1028,18 @@ public class PXDArchive : PXDArchiveHeader
         }
     }
 
+    /// <summary>
+    /// Request encoding for the file at the given index.
+    /// If the file's data was not loaded, no work is performed.
+    /// If the file's data is already encoded, no work is performed.
+    /// </summary>
+    /// <param name="fileIndex">The file index for encoding.</param>
+    /// <param name="encodingParam">The requested encoding parametres.</param>
     public void EncodeFile(int fileIndex, SLLZParameters encodingParam)
     {
         if (fileIndex >= FileCount)
         {
-            Console.WriteLine($"ERROR in DecodeFileData: File index {fileIndex} was given, but the archive only contains {FileCount} file(s).");
+            Console.WriteLine($"ERROR in EncodeFile: File index {fileIndex} was given, but the archive only contains {FileCount} file(s).");
         }
         else
         {
@@ -828,6 +1057,11 @@ public class PXDArchive : PXDArchiveHeader
         }
     }
 
+    /// <summary>
+    /// Request decoding for all files in the archive.
+    /// If a particular file is not encoded, no work is performed.
+    /// </summary>
+    /// <param name="parallel">Whether decoding should be performed in parallel.</param>
     public void DecodeAll(bool parallel = false)
     {
         if (parallel)
@@ -850,6 +1084,12 @@ public class PXDArchive : PXDArchiveHeader
             Console.WriteLine($"{Name}: All {FileCount} files in archive decoded.");
     }
 
+    /// <summary>
+    /// Request encoding for all files in the archive.
+    /// If a particular file is already encoded, no work is performed.
+    /// </summary>
+    /// <param name="encodingParam">The requested encoding parametres.</param>
+    /// <param name="parallel">Whether encoding should be performed in parallel.</param>
     public void EncodeAll(SLLZParameters encodingParam, bool parallel = false)
     {
         if (encodingParam.Version != SLLZVersion.UNCOMPRESSED)
@@ -873,14 +1113,36 @@ public class PXDArchive : PXDArchiveHeader
     #endregion
 
     #region FileAccess
+    /// <summary>
+    /// Get all files with a matching name (case-insensitive).
+    /// </summary>
     public IEnumerable<PXDArchiveFile> FilesNamed(string name) => _files.Where(file => name.Equals(file.Name, StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>
+    /// Get all files ending with a matching suffix (case-insensitive).
+    /// </summary>
     public IEnumerable<PXDArchiveFile> FilesEnding(string suffix) => _files.Where(file => file.Name.EndsWith(suffix, StringComparison.OrdinalIgnoreCase));
 
+    /// <summary>
+    /// Get all directories with a matching name (case-insensitive).
+    /// </summary>
     public IEnumerable<PXDArchiveDirectory> DirectoriesNamed(string name) => _directories.Where(dir => name.Equals(dir.Name, StringComparison.OrdinalIgnoreCase));
 
+    // TO-DO: These two functions below need invalid index handling.
+    /// <summary>
+    /// Get the file at a given index.
+    /// </summary>
     public PXDArchiveFile GetFile(int index) => _files[index];
+
+    /// <summary>
+    /// Get the directory at a given index.
+    /// </summary>
     public PXDArchiveDirectory GetDirectory(int index) => _directories[index];
 
+    /// <summary>
+    /// Get the index of the first file found with a matching name (case-insensitive).
+    /// </summary>
+    /// <returns>The index, or -1 if no file with that name is found.</returns>
     public int IndexOf(string name)
     {
         for (int i = 0; i < _files.Length; i++)
@@ -894,6 +1156,9 @@ public class PXDArchive : PXDArchiveHeader
     #endregion
 
     #region Other
+    /// <summary>
+    /// Verify that data has been loaded and properly initialized.
+    /// </summary>
     private void AssertReadyForWrite()
     {
         if (!DataLoaded)
@@ -903,6 +1168,10 @@ public class PXDArchive : PXDArchiveHeader
             throw new Exception($"ERROR: Data in archive {Name} was loaded, but initialization was never completed.");
     }
 
+    /// <summary>
+    /// Check if the archive is similar to another archive.
+    /// </summary>
+    /// <remarks>Compares the archive headers, directory headers, and file names.</remarks>
     public bool SimilarTo(PXDArchive? other)
     {
         return other is not null &&

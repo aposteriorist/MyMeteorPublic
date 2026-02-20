@@ -3,14 +3,44 @@ using MyMeteor.IO.Compression;
 
 namespace MyMeteor.Archive;
 
+/// <summary>
+/// A class representing the header for a file within an archive.
+/// </summary>
 public class PXDArchiveFileHeader
 {
+    /// <summary>
+    /// The file's name.
+    /// </summary>
     public string Name { get; internal set; }
+
+    /// <summary>
+    /// Whether the file was compressed and has been decoded.
+    /// </summary>
     public bool WasCompressed { get; internal set; }
+
+    /// <summary>
+    /// Whether the file was originally compressed in the archive.
+    /// </summary>
     public bool OrigCompressed { get; internal set; }
+
+    /// <summary>
+    /// The file's uncompressed size.
+    /// </summary>
     public int Size { get; internal set; }
+
+    /// <summary>
+    /// The file's length within the archive (differs from file size if compressed).
+    /// </summary>
     public int EntryLength { get; internal set; }
+
+    /// <summary>
+    /// The file attributes.
+    /// </summary>
     public FileAttributes Attributes { get; internal set; }
+
+    /// <summary>
+    /// The file's timestamp. (Stored in the archive as time since Unix epoch.)
+    /// </summary>
     public DateTime Timestamp { get; internal set; }
 
     internal static PXDArchiveFileHeader HeaderFromManifest(StreamReader reader, out SLLZParameters encodingParams)
@@ -47,22 +77,55 @@ public class PXDArchiveFileHeader
     }
 }
 
+/// <summary>
+/// A virtual file used as part of the file structure for an archive.
+/// </summary>
 public class PXDArchiveFile : PXDArchiveFileHeader
 {
-    public long DataOffset { get; internal set; }   // long's maximum value is acceptable here on the basis of sanity
+    /// <summary>
+    /// Whether the file's data is loaded into memory.
+    /// </summary>
     public bool DataLoaded => DataHistory.CurrentIndex > -1;
+
+    /// <summary>
+    /// The file's data, if loaded into memory.
+    /// </summary>
     public byte[]? Data => DataHistory.Current?.Data;
+
+    /// <summary>
+    /// Whether the file's data is currently compressed.
+    /// </summary>
     public bool IsCompressed => DataHistory.Current?.IsCompressed ?? false;
+
+    /// <summary>
+    /// The current encoding of the file's data in memory.
+    /// </summary>
     public SLLZParameters? CurrentEncoding => IsCompressed ? SLLZ.GetEncoding(Data) : null;
+
+    /// <summary>
+    /// The archive directory containing this virtual file.
+    /// </summary>
+    public PXDArchiveDirectory ContainingDirectory { get; internal set; }
 
     internal readonly History<DataRecord> DataHistory = new(4);
 
-    public PXDArchiveDirectory ContainingDirectory { get; internal set; }
 
+    /// <summary>
+    /// Create an empty virtual file.
+    /// </summary>
     public PXDArchiveFile(string name) => Name = name;
 
-    public static PXDArchiveFile FromArchiveEntry(MyBinaryReader reader, string name, bool loadData = false, bool decodeData = false)
+    /// <summary>
+    /// Create a virtual file by parsing a file entry in an archive.
+    /// File data can be loaded into memory and decoded at this time.
+    /// </summary>
+    /// <param name="reader">A reader over a stream of archive data.</param>
+    /// <param name="name">The file's name.</param>
+    /// <param name="loadData">Whether to store the file's data in memory.</param>
+    /// <param name="decodeData">Whether to decode the data if compressed.</param>
+    internal static PXDArchiveFile FromArchiveEntry(MyBinaryReader reader, string name, bool loadData = false, bool decodeData = false)
     {
+        // TO-DO: Is this exception appropriate?
         if (!loadData && decodeData)
             throw new Exception($"ERROR for {name}: Data decoding requested in FromArchiveEntry, but data loading was not requested.");
 
@@ -76,7 +139,7 @@ public class PXDArchiveFile : PXDArchiveFileHeader
 
         uint offset = reader.ReadUInt32();
         file.Attributes = (FileAttributes) reader.ReadUInt32();
-        file.DataOffset = ((reader.ReadUInt32() & 0xFFFFFF) << 32) | offset;
+        long DataOffset = ((reader.ReadUInt32() & 0xFFFFFF) << 32) | offset;
         file.Timestamp = DateTime.UnixEpoch.AddSeconds(reader.ReadInt64());
 
         if (PXDArchiveOptions.Verbose)
@@ -84,7 +147,7 @@ public class PXDArchiveFile : PXDArchiveFileHeader
         
         if (loadData)
         {
-            file.LoadData(reader);
+            file.LoadData(reader, DataOffset);
 
             if (decodeData)
             {
@@ -101,12 +164,28 @@ public class PXDArchiveFile : PXDArchiveFileHeader
         return file;
     }
 
+    /// <summary>
+    /// Create a virtual file from a path on disk.
+    /// File data can be loaded into memory and encoded at this time.
+    /// </summary>
+    /// <param name="filePath">The path of the file on disk.</param>
+    /// <param name="directory">The virtual directory that will contain the virtual file.</param>
+    /// <param name="loadData">Whether to load the file's data in memory.</param>
+    /// <param name="encodingParams">The requested encoding parametres, if any.</param>
     public static PXDArchiveFile FromFilePath(string filePath, PXDArchiveDirectory directory, bool loadData = true, SLLZParameters? encodingParams = null)
     {
         // Get the FileInfo for the path if it exists.
         return FromFileInfo(new FileInfo(filePath), directory, loadData, encodingParams);
     }
 
+    /// <summary>
+    /// Create a virtual file from a FileInfo instance pointing to a file path on disk.
+    /// File data can be loaded into memory and encoded at this time.
+    /// </summary>
+    /// <param name="info">The file in question.</param>
+    /// <param name="directory">The virtual directory that will contain the virtual file.</param>
+    /// <param name="loadData">Whether to load the file's data in memory.</param>
+    /// <param name="encodingParams">The requested encoding parametres, if any.</param>
     public static PXDArchiveFile FromFileInfo(FileInfo info, PXDArchiveDirectory directory, bool loadData = true, SLLZParameters? encodingParams = null)
     {
         PXDArchiveFile? entry = null;
@@ -123,7 +202,6 @@ public class PXDArchiveFile : PXDArchiveFileHeader
             entry = new(info.Name);
             entry.Size = entry.EntryLength = (int) info.Length;
             entry.WasCompressed = entry.OrigCompressed = false;
-            entry.DataOffset = -1;
             entry.Attributes = info.Attributes;
             entry.Timestamp = info.CreationTimeUtc;
 
@@ -149,12 +227,18 @@ public class PXDArchiveFile : PXDArchiveFileHeader
         return entry;
     }
 
+    /// <summary>
+    /// Create a virtual file from data in memory.
+    /// </summary>
+    /// <param name="data">The file's data.</param>
+    /// <param name="directory">The virtual directory that will contain the virtual file.</param>
+    /// <param name="name">A name for the file.</param>
+    /// <param name="encodingParams">The requested encoding parametres, if any.</param>
     public static PXDArchiveFile FromBytes(byte[] data, PXDArchiveDirectory directory, string name, SLLZParameters? encodingParams = null)
     {
         PXDArchiveFile entry = new(name);
         entry.Size = entry.EntryLength = data.Length;
         entry.WasCompressed = entry.OrigCompressed = false;
-        entry.DataOffset = -1;
         entry.Attributes = FileAttributes.None;
         entry.Timestamp = DateTime.UtcNow;
 
@@ -174,6 +258,11 @@ public class PXDArchiveFile : PXDArchiveFileHeader
         return entry;
     }
 
+    /// <summary>
+    /// Create a new MemoryStream and write the file's data into it.
+    /// </summary>
+    /// <param name="decode">Whether to decode the file, if compressed.</param>
+    /// <remark>If the file's data was never loaded into memory, this will throw an exception.</remark>
     public MemoryStream ToFile(bool decode = true)
     {
         MemoryStream outStream = new();
@@ -182,12 +271,24 @@ public class PXDArchiveFile : PXDArchiveFileHeader
         return outStream;
     }
 
+    /// <summary>
+    /// Write the file's data into the provided stream.
+    /// </summary>
+    /// <param name="outStream">The output stream.</param>
+    /// <param name="decode">Whether to decode the file, if compressed.</param>
+    /// <remark>If the file's data was never loaded into memory, this will throw an exception.</remark>
     public void ToFile(Stream outStream, bool decode = true)
     {
         using MyBinaryWriter writer = new(outStream, true);
         ToFile(writer, decode);
     }
 
+    /// <summary>
+    /// Write the file's data using a writer over an output stream.
+    /// </summary>
+    /// <param name="writer">A writer over an output stream.</param>
+    /// <param name="decode">Whether to decode the file, if compressed.</param>
+    /// <remark>If the file's data was never loaded into memory, this will throw an exception.</remark>
     public void ToFile(MyBinaryWriter writer, bool decode = true)
     {
         if (Data != null)
@@ -238,7 +339,7 @@ public class PXDArchiveFile : PXDArchiveFileHeader
             }
 
             // Note the current offset, and write the file.
-            DataOffset = writer.Position;
+            long dataOffset = writer.Position;
             writer.Write(Data);
             
 
@@ -247,9 +348,9 @@ public class PXDArchiveFile : PXDArchiveFileHeader
             writer.Write(IsCompressed ? 0x80000000 : 0U);
             writer.Write(Size);
             writer.Write(Data.Length);
-            writer.Write(DataOffset > uint.MaxValue ? 0xFFFFFFFF : (uint)DataOffset);
+            writer.Write(dataOffset > uint.MaxValue ? 0xFFFFFFFF : (uint)dataOffset);
             writer.Write((uint)Attributes);
-            writer.Write((uint)(DataOffset >> 32) & 0xFFFFFF);
+            writer.Write((uint)(dataOffset >> 32) & 0xFFFFFF);
             writer.Write((ulong)((Timestamp - DateTime.UnixEpoch).TotalSeconds));
         }
 
@@ -298,22 +399,33 @@ public class PXDArchiveFile : PXDArchiveFileHeader
         Timestamp = header.Timestamp;
     }
 
-    public void LoadData(MyBinaryReader reader, int bytecount = -1)
+    /// <summary>
+    /// Load data from the reader into this file.
+    /// </summary>
+    /// <param name="reader">A reader over the intended data.</param>
+    /// <param name="position">The position to begin reading data from.</param>
+    /// <param name="bytecount">The number of bytes to read. If omitted, the entry length from the header is used.</param>
+    public void LoadData(MyBinaryReader reader, long position = -1, int bytecount = -1)
     {
         DataHistory.Clear();
 
-        if (DataOffset > -1)
-            reader.PushForward(DataOffset);
+        if (position > -1)
+            reader.PushForward(position);
 
         DataHistory.Add(new(reader.ReadBytes(bytecount > 0 ? bytecount : EntryLength), OrigCompressed));
 
-        if (DataOffset > -1)
+        if (position > -1)
             reader.PopBack();
 
         if (PXDArchiveOptions.Verbose)
             Console.WriteLine($"\tLoaded data for {Name} with a length of {Data.Length}.");
     }
 
+    /// <summary>
+    /// Request decoding of the file's data, if compressed.
+    /// </summary>
+    /// <remarks>Throws an exception if the file's data was never loaded.</remarks>
+    /// <exception cref="NullReferenceException"></exception>
     public void DecodeData()
     {
         DataRecord? current = DataHistory.Current;
@@ -346,22 +458,30 @@ public class PXDArchiveFile : PXDArchiveFileHeader
                 Console.WriteLine($"WARNING: Data decode requested for {Name}, but data is not compressed.");
         }
 
+        // TO-DO: Is this exception appropriate?
         else
             throw new NullReferenceException($"ERROR: Data decode requested for {Name}, but data was never loaded.");
     }
 
-    public void EncodeData(SLLZParameters param, bool forceLargerEncode = false)
+    /// <summary>
+    /// Request encoding of the file's data, if not already encoded.
+    /// </summary>
+    /// <param name="encodingParams">The requested encoding parametres.</param>
+    /// <param name="forceLargerEncode">Whether to force encoding even when the resulting data would be larger.</param>
+    /// <remarks>Throws an exception if the file's data was never loaded.</remarks>
+    /// <exception cref="NullReferenceException"></exception>
+    public void EncodeData(SLLZParameters encodingParams, bool forceLargerEncode = false)
     {
         DataRecord? current = DataHistory.Current;
 
         if (current != null)
         {
-            if (param.Version == SLLZVersion.UNCOMPRESSED && !PXDArchiveOptions.SuppressWarnings)
+            if (encodingParams.Version == SLLZVersion.UNCOMPRESSED && !PXDArchiveOptions.SuppressWarnings)
                 Console.WriteLine($"WARNING: Data encode requested for {Name}, but without compression. No work will be done.");
 
             else if (!current.IsCompressed)
             {
-                byte[] encodedData = SLLZ.Encode(current.Data, param);
+                byte[] encodedData = SLLZ.Encode(current.Data, encodingParams);
 
                 if (encodedData != null)
                 {
@@ -381,6 +501,7 @@ public class PXDArchiveFile : PXDArchiveFileHeader
                 Console.WriteLine($"WARNING: Data encode requested for {Name}, but data is already compressed.");
         }
 
+        // TO-DO: Is this exception appropriate?
         else
             throw new NullReferenceException($"ERROR: Data encode requested for {Name}, but data was never loaded.");
     }
@@ -391,6 +512,10 @@ public class PXDArchiveFile : PXDArchiveFileHeader
         Timestamp = other.Timestamp;
     }
 
+    /// <summary>
+    /// Record new data in the history.
+    /// </summary>
+    /// <param name="newData">The new data.</param>
     public bool RecordDataChange(byte[] newData)
     {
         WasCompressed = IsCompressed;
