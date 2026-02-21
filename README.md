@@ -1,29 +1,28 @@
-### A library for working with RGG filetypes.
-
+## A library for working with RGG filetypes.
 [nuget](https://www.nuget.org/packages/MyMeteor/)
 
 ---
 
 ### Namespaces
 ##### (Private namespaces will be unavailable until the Kenzan translation has been released.)
-* #### Archive
+* ### Archive
   PXD archive handling (.par extension with "PARC" magic).
-* #### CSE
-  Cell Sprite Binary handling (.csb), Cell Sprite Editor project handling (.cpj and associated files), and conversion between the two.
+* ### CSE
+  Cell Sprite Binary (.csb) and Cell Sprite Editor project handling (.cpj), associated files, and conversion between the two formats.
   ###### (private)
-* #### ELF
+* ### ELF
   ELF executable handling and read-only data editing, with a focus on PS3.
   ###### (private)
-* #### Event
+* ### Event
   Auth binary handling and subtitle import/export.
   ###### (private)
-* #### IO
+* ### IO
   File input/output.
   * #### Compression
     Compression formats used by RGG (AVLZ, SLLZ, ZLib).
-* #### MSG
+* ### MSG
   .msg and .pac file handling.
   ###### (private)
-* #### PS
+* ### PS
   PS3 Certified File handling. (No Vita as of yet.)
   ###### (private)
